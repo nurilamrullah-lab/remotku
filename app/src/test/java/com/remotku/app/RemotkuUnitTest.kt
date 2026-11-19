@@ -4,6 +4,7 @@ import com.remotku.app.core.proto.ProtoFraming
 import com.remotku.app.core.proto.ProtoMessage
 import com.remotku.app.core.proto.ProtoWriter
 import com.remotku.app.data.ir.IrDatabaseParser
+import com.remotku.app.domain.ir.IrCatalog
 import com.remotku.app.data.ir.ac.AcChange
 import com.remotku.app.data.ir.ac.AcEncoder
 import com.remotku.app.data.ir.ac.AcState
@@ -12,7 +13,6 @@ import com.remotku.app.data.ir.protocol.IrProtocol
 import com.remotku.app.data.tv.atv.AtvPairingSession
 import com.remotku.app.data.tv.atv.InvalidPairingCodeException
 import com.remotku.app.domain.ir.IrCategory
-import com.remotku.app.domain.ir.IrKey
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -129,21 +129,111 @@ class IrEncoderTest {
     }
 }
 
+fun loadCatalog(category: IrCategory): IrCatalog {
+    val file = listOf("src/main/assets/ir", "app/src/main/assets/ir").map { File(it, "${category.asset}.json") }.first { it.exists() }
+    return IrDatabaseParser.parse(file.readText())
+}
+
 class IrDatabaseTest {
+    private val catalogs by lazy { IrCategory.entries.associateWith(::loadCatalog) }
+
+    private fun names(category: IrCategory) = catalogs.getValue(category).brands.map { it.name }.toSet()
+
     @Test
-    fun bundledDatabaseCoversRequiredBrands() {
-        val asset = listOf("src/main/assets/ir_profiles.json", "app/src/main/assets/ir_profiles.json")
-            .map(::File).first { it.exists() }
-        val profiles = IrDatabaseParser.parse(asset.readText())
-        val brands = profiles.groupBy({ it.category }, { it.brand })
-        assertTrue(brands[IrCategory.STB]!!.containsAll(listOf("Matrix Apple", "Luby", "Evercoss", "Tanaka", "Polytron PDV", "Advance")))
-        assertTrue(brands[IrCategory.TV]!!.containsAll(listOf("Polytron", "Samsung", "LG", "TCL", "Coocaa", "Sharp", "Xiaomi TV", "Akari")))
-        assertTrue(brands[IrCategory.AC]!!.containsAll(listOf("Daikin", "Panasonic", "Sharp", "Gree", "LG", "Aux")))
-        profiles.filter { !it.isAc }.forEach {
-            assertTrue("${it.id} has power", IrKey.POWER in it.codes)
-            IrProtocol.valueOf(it.protocol)
+    fun coversHundredsOfBrandsIncludingIndonesianOnes() {
+        val unique = catalogs.values.flatMap { c -> c.brands.map { it.name.lowercase() } }.toSet()
+        assertTrue("unique brands ${unique.size}", unique.size >= 200)
+        assertTrue(names(IrCategory.TV).size >= 150)
+        assertTrue(
+            names(IrCategory.TV).containsAll(
+                listOf(
+                    "Samsung", "LG", "Sony", "Sharp", "Panasonic", "Philips", "Toshiba", "TCL", "Hisense", "Xiaomi", "Polytron",
+                    "Changhong", "Haier", "Coocaa", "Vizio", "Sanyo", "RCA", "Akai", "JVC", "Hitachi", "Sansui", "Skyworth", "Konka",
+                    "Insignia", "Pioneer", "Akari", "Weyon",
+                ),
+            ),
+        )
+        assertTrue(
+            names(IrCategory.STB).containsAll(
+                listOf(
+                    "Matrix Apple", "Luby", "Tanaka", "Polytron", "Evercoss", "Advance", "Welhome", "Sanex", "Noise", "Goldsat",
+                    "Venus", "Huawei", "ZTE", "Fiberhome",
+                ),
+            ),
+        )
+        assertTrue(
+            names(IrCategory.AC).containsAll(
+                listOf(
+                    "Daikin", "Panasonic", "Sharp", "Gree", "LG", "Midea", "Aux", "Changhong", "Mitsubishi Electric",
+                    "Mitsubishi Heavy", "Samsung", "Haier", "TCL", "Aqua",
+                ),
+            ),
+        )
+        IrCategory.entries.forEach { assertTrue("$it has popular brands", catalogs.getValue(it).popular.isNotEmpty()) }
+    }
+
+    @Test
+    fun everyBrandHasTestableCodeSetsAndEveryCodeEncodes() {
+        catalogs.values.forEach { catalog ->
+            catalog.brands.forEach { brand ->
+                val sets = catalog.codeSetsFor(brand)
+                assertTrue("${brand.name} sets", sets.isNotEmpty())
+                sets.forEach { set ->
+                    if (set.isStatefulAc) {
+                        assertTrue(set.id, AcEncoder.forProtocol(set.acProtocol!!) != null)
+                    } else {
+                        assertTrue("${set.id} has a test key", set.testKey != null)
+                    }
+                }
+            }
+            catalog.codeSets.values.forEach { set ->
+                set.codes.forEach { (key, code) ->
+                    val signal = IrEncoders.decode(code)
+                    assertTrue("${set.id} $key $code", signal != null && signal.pattern.all { it > 0 })
+                    assertTrue("${set.id} $key under 2s", signal!!.durationMicros < 2_000_000)
+                }
+            }
         }
-        profiles.filter { it.isAc }.forEach { assertTrue(it.id, AcEncoder.forProtocol(it.protocol) != null) }
-        assertEquals(profiles.size, profiles.map { it.id }.toSet().size)
+    }
+
+    @Test
+    fun acBrandsWithStatefulEncodersOfferItFirst() {
+        val daikin = catalogs.getValue(IrCategory.AC).brands.first { it.name == "Daikin" }
+        assertEquals("@AC_DAIKIN", daikin.codeSetIds.first())
+    }
+
+    @Test
+    fun searchMatchesBrandAndModel() {
+        val tv = catalogs.getValue(IrCategory.TV)
+        assertEquals("Samsung", tv.search("sams").first().name)
+        assertTrue(tv.search("aquos").any { it.name == "Sharp" })
+    }
+}
+
+class FlipperProtocolTest {
+    /** Reads pulse-distance bytes (LSB-first) after a two-pulse leader. */
+    private fun bytes(pattern: IntArray, count: Int, threshold: Int): IntArray = IntArray(count) { byte ->
+        (0 until 8).sumOf { bit -> if (pattern[2 + (byte * 8 + bit) * 2 + 1] > threshold) 1 shl bit else 0 }
+    }
+
+    @Test
+    fun kaseikyoEncodesPanasonicTvPowerFrame() {
+        // Flipper-IRDB Panasonic TV power: address 80 02 20 00, command D0 03 (LIRC 0x40040100BCBD bit-reversed).
+        val s = IrEncoders.decode("KASEIKYO:200280:3D0")!!
+        assertEquals(3456, s.pattern[0])
+        assertArrayEquals(intArrayOf(0x02, 0x20, 0x80, 0x00, 0x3D, 0xBD), bytes(s.pattern, 6, 900))
+    }
+
+    @Test
+    fun necExtSendsSixteenBitCommandVerbatim() {
+        val s = IrEncoders.decode("NEC_EXT:7F00:F50A")!!
+        assertArrayEquals(intArrayOf(0x00, 0x7F, 0x0A, 0xF5), bytes(s.pattern, 4, 1_000))
+    }
+
+    @Test
+    fun rawCodesKeepTheirTimings() {
+        val s = IrEncoders.decode("RAW:38000:9000 4500 560 560 560")!!
+        assertEquals(38_000, s.frequencyHz)
+        assertArrayEquals(intArrayOf(9000, 4500, 560, 560, 560), s.pattern)
     }
 }

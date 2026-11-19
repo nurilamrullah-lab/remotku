@@ -209,14 +209,14 @@ private fun DeviceRow(
         Modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(RemotkuColors.Surface1)
+            .background(RemotkuColors.Surface)
             .border(1.dp, RemotkuColors.Outline, shape)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            Modifier.size(44.dp).clip(CircleShape).background(RemotkuColors.Surface3),
+            Modifier.size(44.dp).clip(CircleShape).background(RemotkuColors.SurfaceStrong),
             contentAlignment = Alignment.Center,
         ) { Icon(Icons.Filled.Tv, contentDescription = null) }
         Spacer(Modifier.width(12.dp))

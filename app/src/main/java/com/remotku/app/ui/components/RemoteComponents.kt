@@ -65,7 +65,7 @@ fun RemoteButton(
     contentDescription: String,
     modifier: Modifier = Modifier,
     shape: Shape = RoundedCornerShape(18.dp),
-    containerColor: Color = RemotkuColors.Surface2,
+    containerColor: Color = RemotkuColors.Surface,
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
     haptic: HapticType = HapticType.Click,
     enabled: Boolean = true,
@@ -85,8 +85,8 @@ fun RemoteButton(
         modifier = modifier
             .scale(scale)
             .clip(shape)
-            .background(if (pressed) containerColor.copy(alpha = 0.6f) else containerColor.copy(alpha = containerColor.alpha * alpha))
-            .border(1.dp, RemotkuColors.Outline.copy(alpha = 0.6f * alpha), shape)
+            .background(if (pressed) RemotkuColors.SurfaceStrong else containerColor.copy(alpha = containerColor.alpha * alpha))
+            .border(1.dp, RemotkuColors.Outline.copy(alpha = alpha), shape)
             .semantics {
                 role = Role.Button
                 this.contentDescription = contentDescription
@@ -143,7 +143,7 @@ fun IconRemoteButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     size: Dp = 60.dp,
-    containerColor: Color = RemotkuColors.Surface2,
+    containerColor: Color = RemotkuColors.Surface,
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
     haptic: HapticType = HapticType.Click,
     shape: Shape = CircleShape,
@@ -189,7 +189,7 @@ fun DPad(
         modifier = modifier
             .size(size)
             .clip(CircleShape)
-            .background(RemotkuColors.Surface1)
+            .background(RemotkuColors.Surface)
             .border(1.dp, RemotkuColors.Outline, CircleShape),
     ) {
         @Composable
@@ -214,7 +214,8 @@ fun DPad(
             contentDescription = "OK",
             modifier = Modifier.align(Alignment.Center).size(size * 0.40f),
             shape = CircleShape,
-            containerColor = RemotkuColors.Surface3,
+            containerColor = RemotkuColors.PrimarySoft,
+            contentColor = RemotkuColors.Primary,
             haptic = HapticType.Heavy,
             enabled = enabled(DPadDirection.CENTER),
         ) { Text("OK", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium) }
@@ -245,7 +246,7 @@ fun Trackpad(
     Box(
         modifier = modifier
             .clip(shape)
-            .background(RemotkuColors.Surface1)
+            .background(RemotkuColors.Surface)
             .border(1.dp, RemotkuColors.Outline, shape),
     ) {
         Box(
@@ -302,7 +303,7 @@ fun Trackpad(
                         .padding(12.dp)
                         .size(width = 96.dp, height = 54.dp)
                         .clip(RoundedCornerShape(6.dp))
-                        .background(RemotkuColors.Black)
+                        .background(RemotkuColors.Text)
                         .border(1.dp, RemotkuColors.Outline, RoundedCornerShape(6.dp)),
                 ) {
                     Box(
@@ -323,7 +324,7 @@ fun Trackpad(
                 .fillMaxHeight()
                 .width(28.dp)
                 .clip(RoundedCornerShape(12.dp))
-                .background(RemotkuColors.Surface2)
+                .background(RemotkuColors.SurfaceMuted)
                 .pointerInput(Unit) {
                     val stepPx = 40.dp.toPx()
                     var acc = 0f

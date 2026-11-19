@@ -10,21 +10,99 @@ enum class IrProtocol(val label: String) {
     SIRC15("Sony SIRC-15 40 kHz"),
     SIRC20("Sony SIRC-20 40 kHz"),
     SHARP("Sharp 38 kHz"),
+    RC5X("Philips RC-5X 36 kHz"),
+    KASEIKYO("Kaseikyo / Panasonic 37 kHz"),
+    RCA("RCA 38 kHz"),
+    PIONEER("Pioneer 40 kHz"),
 }
 
-/** Encoders for stateless (one code per button) remotes. Address/command use protocol-level values. */
+/**
+ * Encoders for stateless (one code per button) remotes. Address/command follow Flipper Zero's
+ * protocol semantics so codes from Flipper-IRDB replay exactly (e.g. NEC_EXT carries a 16-bit command).
+ */
 object IrEncoders {
 
     fun encode(protocol: IrProtocol, address: Int, command: Int, toggle: Boolean = false): IrSignal = when (protocol) {
         IrProtocol.NEC -> nec(address and 0xFF, command, extended = false)
-        IrProtocol.NEC_EXT -> nec(address and 0xFFFF, command, extended = true)
+        IrProtocol.NEC_EXT -> necExt(address and 0xFFFF, command and 0xFFFF)
         IrProtocol.SAMSUNG -> samsung(address, command)
-        IrProtocol.RC5 -> rc5(address, command, toggle)
+        IrProtocol.RC5 -> rc5(address, command and 0x3F, toggle)
+        IrProtocol.RC5X -> rc5(address, (command and 0x3F) or 0x40, toggle)
         IrProtocol.RC6 -> rc6(address, command, toggle)
         IrProtocol.SIRC12 -> sirc(address, command, addressBits = 5)
         IrProtocol.SIRC15 -> sirc(address, command, addressBits = 8)
         IrProtocol.SIRC20 -> sirc(address, command, addressBits = 13)
         IrProtocol.SHARP -> sharp(address, command)
+        IrProtocol.KASEIKYO -> kaseikyo(address, command)
+        IrProtocol.RCA -> rca(address, command)
+        IrProtocol.PIONEER -> pioneer(address, command)
+    }
+
+    /**
+     * Decodes a database code: `PROTOCOL:addressHex:commandHex` or `RAW:frequency:mark space mark …`.
+     * Returns null for malformed or unsupported entries.
+     */
+    fun decode(code: String, toggle: Boolean = false): IrSignal? = runCatching {
+        val parts = code.split(':', limit = 3)
+        if (parts[0] == "RAW") {
+            val pattern = parts[2].split(' ').map { it.toInt() }.toIntArray()
+            require(pattern.isNotEmpty() && pattern.all { it > 0 })
+            IrSignal(parts[1].toInt(), pattern)
+        } else {
+            encode(IrProtocol.valueOf(parts[0]), parts[1].toInt(16), parts[2].toInt(16), toggle)
+        }
+    }.getOrNull()
+
+    fun necExt(address: Int, command: Int): IrSignal {
+        val b = PulseBuilder().mark(9_000).space(4_500)
+            .bytes(intArrayOf(address and 0xFF, address shr 8, command and 0xFF, command shr 8), NEC_UNIT, NEC_UNIT * 3, NEC_UNIT)
+            .mark(NEC_UNIT)
+        b.space(NEC_FRAME - b.totalMicros)
+        b.mark(9_000).space(2_250).mark(NEC_UNIT)
+        return b.build(NEC_FREQ)
+    }
+
+    // Kaseikyo (Panasonic & co.): 48 bits LSB-first. Address packs id(2) | vendor(16) | genre1(4) | genre2(4).
+    fun kaseikyo(address: Int, command: Int): IrSignal {
+        val id = (address ushr 24) and 3
+        val vendor = (address ushr 8) and 0xFFFF
+        val genre1 = (address ushr 4) and 0xF
+        val genre2 = address and 0xF
+        val d = IntArray(6)
+        d[0] = vendor and 0xFF
+        d[1] = vendor ushr 8
+        val parity = (d[0] xor d[1]).let { (it and 0xF) xor (it ushr 4) }
+        d[2] = (parity and 0xF) or (genre1 shl 4)
+        d[3] = genre2 or ((command and 0xF) shl 4)
+        d[4] = (id shl 6) or ((command ushr 4) and 0x3F)
+        d[5] = d[2] xor d[3] xor d[4]
+        val unit = 432
+        val b = PulseBuilder().mark(8 * unit).space(4 * unit).bytes(d, unit, 3 * unit, unit).mark(unit)
+        b.space(74_000)
+        return b.build(37_000)
+    }
+
+    // RCA: 4-bit address + 8-bit command followed by their complements, 24 bits LSB-first (Flipper layout).
+    fun rca(address: Int, command: Int): IrSignal {
+        val a = address and 0xF
+        val c = command and 0xFF
+        val data = a.toLong() or (c.toLong() shl 4) or ((a.inv() and 0xF).toLong() shl 12) or ((c.inv() and 0xFF).toLong() shl 16)
+        val b = PulseBuilder().mark(4_000).space(4_000).bits(data, 24, 500, 2_000, 1_000, lsbFirst = true).mark(500)
+        b.space(8_000)
+        return b.build(38_000)
+    }
+
+    // Pioneer: NEC-style frame at 40 kHz with a 8.5/4.2 ms leader, always sent twice.
+    fun pioneer(address: Int, command: Int): IrSignal {
+        val a = address and 0xFF
+        val c = command and 0xFF
+        val b = PulseBuilder()
+        repeat(2) {
+            b.mark(8_500).space(4_225)
+                .bytes(intArrayOf(a, a.inv() and 0xFF, c, c.inv() and 0xFF), 500, 1_500, 500)
+                .mark(500).space(26_000)
+        }
+        return b.build(40_000)
     }
 
     // NEC: 9 ms / 4.5 ms leader, 562.5 µs pulse distance, address + ~address (or 16-bit address) + command + ~command.

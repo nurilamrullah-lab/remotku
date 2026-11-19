@@ -3,8 +3,9 @@ package com.remotku.app
 import android.app.Application
 import android.content.Context
 import android.os.Build
-import com.remotku.app.data.ir.IrProfileRepository
+import com.remotku.app.data.ir.IrCatalogRepository
 import com.remotku.app.data.ir.IrTransmitter
+import com.remotku.app.data.ir.SavedRemoteStore
 import com.remotku.app.data.local.RemotkuDatabase
 import com.remotku.app.data.tv.TvRemoteRepository
 import com.remotku.app.data.tv.atv.CertificateManager
@@ -30,7 +31,8 @@ class AppContainer(context: Context) {
         scope = appScope,
         clientName = "Remotku (${Build.MODEL})",
     )
-    val irProfiles = IrProfileRepository(context)
+    val irCatalog = IrCatalogRepository(context)
+    val savedRemotes = SavedRemoteStore(context)
     val irTransmitter = IrTransmitter(context)
 }
 

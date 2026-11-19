@@ -6,95 +6,101 @@ import com.remotku.app.data.ir.ac.AcChange
 import com.remotku.app.data.ir.ac.AcEncoder
 import com.remotku.app.data.ir.ac.AcState
 import com.remotku.app.data.ir.protocol.IrEncoders
-import com.remotku.app.data.ir.protocol.IrProtocol
 import com.remotku.app.data.ir.protocol.IrSignal
+import com.remotku.app.domain.ir.IrBrand
+import com.remotku.app.domain.ir.IrCatalog
 import com.remotku.app.domain.ir.IrCategory
+import com.remotku.app.domain.ir.IrCodeSet
 import com.remotku.app.domain.ir.IrKey
-import com.remotku.app.domain.ir.IrProfile
+import com.remotku.app.domain.ir.SavedRemote
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
 @Serializable
-private data class IrDatabaseJson(
+private data class CatalogJson(
     val version: Int,
-    val codeSets: Map<String, CodeSetJson>,
-    val profiles: List<ProfileJson>,
-)
-
-@Serializable
-private data class CodeSetJson(
-    val protocol: String,
-    val address: String,
-    val verified: Boolean = false,
-    val codes: Map<String, String>,
-)
-
-@Serializable
-private data class ProfileJson(
-    val id: String,
     val category: String,
-    val brand: String,
-    val model: String,
-    val codeSet: String? = null,
-    val protocol: String? = null,
+    val brands: List<BrandJson>,
+    val codeSets: Map<String, CodeSetJson>,
 )
 
-/** Built-in device profiles shipped as `assets/ir_profiles.json`. */
-class IrProfileRepository(private val context: Context) {
+@Serializable
+private data class BrandJson(val name: String, val sets: List<String>, val popular: Int? = null)
 
-    private val prefs = context.getSharedPreferences("ir", Context.MODE_PRIVATE)
-    private val mutex = Mutex()
-    private var cache: List<IrProfile>? = null
-
-    suspend fun profiles(): List<IrProfile> = mutex.withLock {
-        cache ?: withContext(Dispatchers.IO) {
-            val text = context.assets.open(ASSET).bufferedReader().use { it.readText() }
-            IrDatabaseParser.parse(text)
-        }.also { cache = it }
-    }
-
-    var selectedProfileId: String?
-        get() = prefs.getString(KEY_SELECTED, null)
-        set(value) = prefs.edit().putString(KEY_SELECTED, value).apply()
-
-    private companion object {
-        const val ASSET = "ir_profiles.json"
-        const val KEY_SELECTED = "selected_profile"
-    }
-}
+@Serializable
+private data class CodeSetJson(val model: String, val keys: Map<String, String>, val universal: Boolean = false)
 
 object IrDatabaseParser {
     private val json = Json { ignoreUnknownKeys = true }
 
-    fun parse(text: String): List<IrProfile> {
-        val db = json.decodeFromString<IrDatabaseJson>(text)
-        return db.profiles.mapNotNull { p ->
-            val category = runCatching { IrCategory.valueOf(p.category) }.getOrNull() ?: return@mapNotNull null
-            val set = p.codeSet?.let { db.codeSets[it] }
-            if (set != null) {
-                IrProfile(
-                    id = p.id,
-                    category = category,
-                    brand = p.brand,
-                    model = p.model,
-                    protocol = set.protocol,
-                    address = parseHex(set.address),
-                    codes = set.codes.mapNotNull { (k, v) ->
-                        runCatching { IrKey.valueOf(k) to parseHex(v) }.getOrNull()
-                    }.toMap(),
-                    verified = set.verified,
-                )
-            } else {
-                IrProfile(id = p.id, category = category, brand = p.brand, model = p.model, protocol = p.protocol ?: return@mapNotNull null)
+    /** Code set ids starting with this prefix name a stateful [AcEncoder] instead of a stored set. */
+    const val AC_PREFIX = "@"
+
+    fun parse(text: String): IrCatalog {
+        val db = json.decodeFromString<CatalogJson>(text)
+        val category = IrCategory.valueOf(db.category)
+        val sets = HashMap<String, IrCodeSet>(db.codeSets.size * 2)
+        db.codeSets.forEach { (id, set) ->
+            val codes = set.keys.mapNotNull { (k, v) -> runCatching { IrKey.valueOf(k) to v }.getOrNull() }.toMap()
+            sets[id] = IrCodeSet(id, set.model, codes, set.universal)
+        }
+        db.brands.flatMap { it.sets }.filter { it.startsWith(AC_PREFIX) }.distinct().forEach { id ->
+            val protocol = id.removePrefix(AC_PREFIX)
+            if (AcEncoder.forProtocol(protocol) != null) {
+                sets[id] = IrCodeSet(id, "Protokol ${protocol.removePrefix("AC_").lowercase().replaceFirstChar { it.uppercase() }} (lengkap)", acProtocol = protocol)
             }
         }
+        val brands = db.brands.map { b -> IrBrand(b.name, b.popular, b.sets.filter { it in sets }) }
+            .filter { it.codeSetIds.isNotEmpty() }
+        return IrCatalog(category, brands, sets)
+    }
+}
+
+/** Loads one category's brand catalog on demand from `assets/ir/<category>.json`. */
+class IrCatalogRepository(private val context: Context) {
+    private val mutex = Mutex()
+    private val cache = HashMap<IrCategory, IrCatalog>()
+
+    suspend fun catalog(category: IrCategory): IrCatalog = mutex.withLock {
+        cache[category] ?: withContext(Dispatchers.IO) {
+            val text = context.assets.open("ir/${category.asset}.json").bufferedReader().use { it.readText() }
+            IrDatabaseParser.parse(text)
+        }.also { cache[category] = it }
+    }
+}
+
+/** Remotes confirmed through the pairing wizard, persisted as JSON in shared preferences. */
+class SavedRemoteStore(context: Context) {
+    private val prefs = context.getSharedPreferences("ir", Context.MODE_PRIVATE)
+    private val serializer = ListSerializer(SavedRemote.serializer())
+    private val json = Json { ignoreUnknownKeys = true }
+    private val _remotes = MutableStateFlow(load())
+    val remotes: StateFlow<List<SavedRemote>> = _remotes.asStateFlow()
+
+    private fun load(): List<SavedRemote> =
+        prefs.getString(KEY, null)?.let { runCatching { json.decodeFromString(serializer, it) }.getOrNull() }.orEmpty()
+
+    fun add(remote: SavedRemote) = update { listOf(remote) + it.filterNot { r -> r.id == remote.id } }
+
+    fun remove(id: String) = update { list -> list.filterNot { it.id == id } }
+
+    private fun update(transform: (List<SavedRemote>) -> List<SavedRemote>) {
+        _remotes.update(transform)
+        prefs.edit().putString(KEY, json.encodeToString(serializer, _remotes.value)).apply()
     }
 
-    private fun parseHex(value: String): Int = value.removePrefix("0x").removePrefix("0X").toInt(16)
+    private companion object {
+        const val KEY = "saved_remotes_v2"
+    }
 }
 
 /** Wraps [ConsumerIrManager]; transmissions are serialized because each call blocks for the burst length. */
@@ -106,17 +112,16 @@ class IrTransmitter(context: Context) {
 
     val hasIrEmitter: Boolean = runCatching { manager?.hasIrEmitter() == true }.getOrDefault(false)
 
-    fun encodeKey(profile: IrProfile, key: IrKey): IrSignal? {
-        val command = profile.codes[key] ?: return null
-        val protocol = runCatching { IrProtocol.valueOf(profile.protocol) }.getOrNull() ?: return null
+    fun encodeKey(set: IrCodeSet, key: IrKey): IrSignal? {
+        val code = set.codes[key] ?: return null
         // RC-5/RC-6 receivers ignore repeats unless the toggle bit flips between presses.
-        val toggle = toggles[profile.id]?.not() ?: false
-        toggles[profile.id] = toggle
-        return IrEncoders.encode(protocol, profile.address, command, toggle)
+        val toggle = toggles[set.id]?.not() ?: false
+        toggles[set.id] = toggle
+        return IrEncoders.decode(code, toggle)
     }
 
-    fun encodeAc(profile: IrProfile, state: AcState, change: AcChange): IrSignal? =
-        AcEncoder.forProtocol(profile.protocol)?.encode(state, change)
+    fun encodeAc(set: IrCodeSet, state: AcState, change: AcChange): IrSignal? =
+        set.acProtocol?.let { AcEncoder.forProtocol(it) }?.encode(state, change)
 
     suspend fun transmit(signal: IrSignal): Result<Unit> = withContext(Dispatchers.IO) {
         mutex.withLock {

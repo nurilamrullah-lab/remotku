@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.remotku.app.core.haptics.LocalHaptics
 import com.remotku.app.core.haptics.rememberHaptics
-import com.remotku.app.data.ir.IrDatabaseParser
 import com.remotku.app.data.ir.ac.AcFan
 import com.remotku.app.data.ir.ac.AcMode
 import com.remotku.app.data.ir.ac.AcState
@@ -25,7 +24,12 @@ import com.remotku.app.domain.tv.TransportMode
 import com.remotku.app.domain.tv.TvConnectionState
 import com.remotku.app.domain.tv.TvDevice
 import com.remotku.app.domain.tv.VolumeInfo
-import com.remotku.app.ui.ir.IrScreen
+import com.remotku.app.domain.ir.SavedRemote
+import com.remotku.app.ui.ir.ActiveRemote
+import com.remotku.app.ui.ir.BrandListState
+import com.remotku.app.ui.ir.PairingState
+import com.remotku.app.ui.ir.Route
+import com.remotku.app.ui.main.RemotkuApp
 import com.remotku.app.ui.ir.IrUiState
 import com.remotku.app.ui.theme.RemotkuColors
 import com.remotku.app.ui.theme.RemotkuTheme
@@ -37,7 +41,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
-import java.io.File
 
 /** Renders key screens to PNG (build/outputs/roborazzi) as visual checks of the Compose UI. */
 @RunWith(RobolectricTestRunner::class)
@@ -56,7 +59,7 @@ class ScreenshotTest {
         compose.setContent {
             RemotkuTheme {
                 CompositionLocalProvider(LocalHaptics provides rememberHaptics()) {
-                    Box(Modifier.fillMaxSize().background(RemotkuColors.Black).padding(top = 8.dp)) { content() }
+                    Box(Modifier.fillMaxSize().background(RemotkuColors.Background).padding(top = 8.dp)) { content() }
                 }
             }
         }
@@ -89,30 +92,94 @@ class ScreenshotTest {
         ) {}
     }
 
-    private val profiles by lazy {
-        IrDatabaseParser.parse(listOf("src/main/assets/ir_profiles.json", "app/src/main/assets/ir_profiles.json").map(::File).first { it.exists() }.readText())
-    }
+    private val tvCatalog by lazy { loadCatalog(IrCategory.TV) }
+    private val acCatalog by lazy { loadCatalog(IrCategory.AC) }
+    private val fanCatalog by lazy { loadCatalog(IrCategory.FAN) }
+
+    private fun saved(category: IrCategory, brand: String, set: String, index: Int, count: Int) =
+        SavedRemote("$brand-$category", category, brand, set, index, count, 0L)
+
+    private fun app(ir: IrUiState): @Composable () -> Unit = { RemotkuApp(ir, TvUiState(), {}, {}) }
+
 
     @Test
-    fun irTv() = shot("4_ir_tv") {
-        val p = profiles.first { it.id == "tv_samsung" }
-        IrScreen(IrUiState(hasIrEmitter = true, loading = false, profiles = profiles, category = IrCategory.TV, selectedBrand = p.brand, selectedProfile = p, lastSignal = "Samsung · Power · 38 kHz")) {}
-    }
-
-    @Test
-    fun irStb() = shot("5_ir_stb") {
-        val p = profiles.first { it.id == "stb_matrix_merah_a" }
-        IrScreen(IrUiState(hasIrEmitter = true, loading = false, profiles = profiles, category = IrCategory.STB, selectedBrand = p.brand, selectedProfile = p)) {}
-    }
-
-    @Test
-    fun irAc() = shot("6_ir_ac") {
-        val p = profiles.first { it.id == "ac_daikin" }
-        IrScreen(
-            IrUiState(
-                hasIrEmitter = true, loading = false, profiles = profiles, category = IrCategory.AC, selectedBrand = p.brand, selectedProfile = p,
-                acState = AcState(power = true, mode = AcMode.COOL, temperature = 24, fan = AcFan.MEDIUM, swing = true),
+    fun home() = shot("3_home", app(
+        IrUiState(
+            hasIrEmitter = true,
+            saved = listOf(
+                saved(IrCategory.TV, "Samsung", "tv_1", 1, 24),
+                saved(IrCategory.AC, "Daikin", "@AC_DAIKIN", 1, 11),
+                saved(IrCategory.STB, "Matrix Apple", "stb_dvb_generic_a", 2, 10),
+                saved(IrCategory.FAN, "Miyako", "fan_1", 3, 8),
             ),
-        ) {}
-    }
+        ),
+    ))
+
+    @Test
+    fun addController() = shot("4_add_controller", app(IrUiState(hasIrEmitter = true, routes = listOf(Route.Home, Route.AddController))))
+
+    @Test
+    fun brandSelect() = shot("5_brand_select", app(
+        IrUiState(
+            hasIrEmitter = true,
+            routes = listOf(Route.Home, Route.AddController, Route.Brands(IrCategory.TV)),
+            brandList = BrandListState(IrCategory.TV, tvCatalog),
+        ),
+    ))
+
+    @Test
+    fun brandSearch() = shot("6_brand_search", app(
+        IrUiState(
+            hasIrEmitter = true,
+            routes = listOf(Route.Home, Route.AddController, Route.Brands(IrCategory.TV)),
+            brandList = BrandListState(IrCategory.TV, tvCatalog, query = "aquos"),
+        ),
+    ))
+
+    @Test
+    fun pairing() = shot("7_pairing", app(
+        run {
+            val brand = tvCatalog.brands.first { it.name == "Polytron" }
+            IrUiState(
+                hasIrEmitter = true,
+                routes = listOf(Route.Home, Route.Brands(IrCategory.TV), Route.Pairing(IrCategory.TV, brand.name)),
+                pairing = PairingState(IrCategory.TV, brand.name, tvCatalog.codeSetsFor(brand), index = 1, tested = true, loading = false),
+            )
+        },
+    ))
+
+    @Test
+    fun irTvRemote() = shot("8_ir_tv_remote", app(
+        run {
+            val brand = tvCatalog.brands.first { it.name == "Samsung" }
+            val set = tvCatalog.codeSetsFor(brand).first()
+            val remote = saved(IrCategory.TV, "Samsung", set.id, 1, brand.codeSetIds.size)
+            IrUiState(
+                hasIrEmitter = true, routes = listOf(Route.Home, Route.Remote(remote.id)),
+                active = ActiveRemote(remote, set, lastSignal = "Samsung · Power · 38 kHz"),
+            )
+        },
+    ))
+
+    @Test
+    fun irAcRemote() = shot("9_ir_ac_remote", app(
+        run {
+            val set = acCatalog.codeSets.getValue("@AC_DAIKIN")
+            val remote = saved(IrCategory.AC, "Daikin", set.id, 1, 11)
+            IrUiState(
+                hasIrEmitter = true, routes = listOf(Route.Home, Route.Remote(remote.id)),
+                active = ActiveRemote(remote, set, AcState(power = true, mode = AcMode.COOL, temperature = 24, fan = AcFan.MEDIUM, swing = true)),
+            )
+        },
+    ))
+
+    @Test
+    fun irFanRemote() = shot("10_ir_fan_remote", app(
+        run {
+            val brand = fanCatalog.brands.first { it.name == "Dyson" }
+            val set = fanCatalog.codeSetsFor(brand).maxBy { it.codes.size }
+            val remote = saved(IrCategory.FAN, brand.name, set.id, 1, brand.codeSetIds.size)
+            IrUiState(hasIrEmitter = true, routes = listOf(Route.Home, Route.Remote(remote.id)), active = ActiveRemote(remote, set))
+        },
+    ))
 }

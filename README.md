@@ -1,6 +1,6 @@
 # Remotku
 
-Aplikasi Universal Remote Control Android (Kotlin, Jetpack Compose, Material 3 Dark AMOLED) dengan dukungan
+Aplikasi Universal Remote Control Android (Kotlin, Jetpack Compose, Material 3, tema terang) dengan dukungan
 remote Android TV via WiFi/LAN dan IR blaster, plus haptic feedback di setiap tombol.
 
 ## Fitur
@@ -18,17 +18,29 @@ remote Android TV via WiFi/LAN dan IR blaster, plus haptic feedback di setiap to
 - **Quick launcher**: YouTube, Netflix, Vidio, Prime Video, Play Store.
 
 ### Inframerah (IR)
+- Alur seperti ZaZa Remote: **Tambah remote** → kategori (TV, STB/Satelit, AC, Proyektor, OTT-Box, DVD/Blu-ray,
+  Kipas Angin, Robot Cleaner, Air Purifier/Humidifier, Audio/Soundbar) → **pilih merek** (pencarian merek & model,
+  bagian *Popular brands*, daftar A–Z dengan indeks huruf yang bisa diketuk/diseret) → **wizard pencocokan**
+  (kirim Power untuk kode 1/N, jawab Ya/Tidak) → remote tersimpan di halaman utama.
 - `ConsumerIrManager` untuk HP ber-IR blaster.
-- Encoder: NEC / NEC Extended (38 kHz), Samsung32, RC-5, RC-6 (mode 0, toggle bit), Sony SIRC 12/15/20, Sharp.
+- Encoder (semantik alamat/perintah sama dengan Flipper Zero): NEC, NEC Extended (perintah 16-bit), Samsung32,
+  RC-5/RC-5X, RC-6, Sony SIRC 12/15/20, Kaseikyo (Panasonic dkk.), RCA, Pioneer, Sharp, serta sinyal RAW.
 - AC stateful (suhu, mode Auto/Cool/Dry/Fan/Heat, kecepatan kipas, swing): Daikin, Panasonic, Sharp, Gree, LG, Aux.
-- Database profil di `app/src/main/assets/ir_profiles.json`:
-  - TV: Polytron, Samsung, LG, TCL, Coocaa, Sharp, Xiaomi TV, Akari (+ Sony)
-  - STB DVB-T2: Matrix Apple (Merah/Silver), Luby, Evercoss, Tanaka, Polytron PDV, Advance
-  - AC: Daikin, Panasonic, Sharp, Gree, LG, Aux
+  Merek AC lain memakai tombol hasil rekaman (Power, Suhu ±, Mode, Fan, Swing, …).
 
-> Kode Samsung, LG, Sony, dan Sharp Aquos berasal dari Flipper-IRDB. Merek lokal (STB DVB-T2, Polytron, TCL, Coocaa,
-> Xiaomi, Akari) memakai set kode generik dengan beberapa varian ("Kode A/B") yang bisa dicoba bergantian; profil
-> tersebut ditandai *kode generik* di aplikasi. Layout byte AC mengikuti format yang didokumentasikan IRremoteESP8266.
+### Database IR
+- `app/src/main/assets/ir/<kategori>.json` — ±720 merek unik (TV 207, STB 168, Audio 147, AC 108, Kipas 102,
+  DVD 89, Proyektor 77, Purifier 28, OTT 21, Robot 16), ±2.000 set kode; tiap merek punya beberapa set kode yang
+  diurutkan dari kode Power yang paling banyak dipakai.
+- Sumber: [Flipper-IRDB](https://github.com/Lucaslhm/Flipper-IRDB) (lisensi CC0, termasuk konversi IRDB) +
+  set DVB-T2 lama Remotku. Dibangun ulang dengan:
+  ```bash
+  git clone --depth 1 https://github.com/Lucaslhm/Flipper-IRDB /tmp/irdb
+  python3 tools/irdb/build_ir_db.py /tmp/irdb
+  ```
+- Merek lokal yang tidak ada di database publik (mis. Polytron, Coocaa, Akari, Matrix Apple, Luby, Tanaka, Miyako,
+  Cosmos) memakai **set kode universal**: kode Power yang paling banyak dipakai lintas merek di kategori itu
+  (ditandai *Universal* di wizard). Daftarnya ada di `LOCAL_BRANDS` pada skrip generator.
 
 ## Arsitektur
 
@@ -40,7 +52,7 @@ app/src/main/java/com/remotku/app/
 ├── data/
 │   ├── local/     Room (perangkat TV tersimpan)
 │   ├── tv/        discovery (NSD + subnet), atv (pairing + remote v2), adb, TvRemoteRepository
-│   └── ir/        encoder protokol, encoder AC, database profil, transmitter
+│   └── ir/        encoder protokol, encoder AC, katalog per kategori, remote tersimpan, transmitter
 ├── domain/        model TV & IR
 └── ui/            theme, komponen (RemoteButton, DPad, Trackpad), main, tv, ir
 ```

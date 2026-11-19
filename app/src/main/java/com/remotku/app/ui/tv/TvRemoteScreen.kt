@@ -186,7 +186,7 @@ fun TvRemoteScreen(
                 IconRemoteButton(Icons.AutoMirrored.Filled.VolumeOff, "Mute", { key(KeyEvent.KEYCODE_VOLUME_MUTE) })
                 IconRemoteButton(
                     Icons.Filled.Keyboard, "Keyboard", { showKeyboard = true },
-                    containerColor = RemotkuColors.PrimaryDim, contentColor = RemotkuColors.Primary,
+                    containerColor = RemotkuColors.PrimarySoft, contentColor = RemotkuColors.Primary,
                 )
             }
             Rocker(
@@ -214,7 +214,7 @@ private fun Rocker(label: String, upIcon: ImageVector, downIcon: ImageVector, on
     Column(
         Modifier
             .width(76.dp)
-            .background(RemotkuColors.Surface1, shape)
+            .background(RemotkuColors.Surface, shape)
             .border(1.dp, RemotkuColors.Outline, shape)
             .padding(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -242,7 +242,7 @@ private fun QuickApps(onLaunch: (QuickApp) -> Unit) {
                         modifier = Modifier.weight(1f).height(52.dp),
                         shape = RoundedCornerShape(14.dp),
                         containerColor = Color(app.brandColor).copy(alpha = 0.22f),
-                        contentColor = Color.White,
+                        contentColor = RemotkuColors.Text,
                     ) { Text(app.label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold) }
                 }
                 repeat(3 - row.size) { Box(Modifier.weight(1f)) }
