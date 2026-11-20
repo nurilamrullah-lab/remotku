@@ -5,6 +5,7 @@ import com.remotku.app.core.proto.ProtoMessage
 import com.remotku.app.core.proto.ProtoWriter
 import com.remotku.app.data.ir.IrDatabaseParser
 import com.remotku.app.domain.ir.IrCatalog
+import com.remotku.app.domain.ir.SavedRemote
 import com.remotku.app.data.ir.ac.AcChange
 import com.remotku.app.data.ir.ac.AcEncoder
 import com.remotku.app.data.ir.ac.AcState
@@ -132,6 +133,24 @@ class IrEncoderTest {
 fun loadCatalog(category: IrCategory): IrCatalog {
     val file = listOf("src/main/assets/ir", "app/src/main/assets/ir").map { File(it, "${category.asset}.json") }.first { it.exists() }
     return IrDatabaseParser.parse(file.readText())
+}
+
+class SavedRemoteTest {
+    private val remote = SavedRemote("id", IrCategory.FAN, "Miyako", "fan_1", 1, 8, 0L)
+
+    @Test
+    fun customNameOverridesTitleAndBlankFallsBack() {
+        assertEquals("Miyako Kipas Angin", remote.title)
+        assertEquals("Kipas Kamar Tidur", remote.copy(customName = "Kipas Kamar Tidur").title)
+        assertEquals("Miyako Kipas Angin", remote.copy(customName = "  ").title)
+    }
+
+    @Test
+    fun remotesSavedBeforeRenameStillDecode() {
+        val json = """[{"id":"a","category":"TV","brand":"LG","codeSetId":"tv_1","codeIndex":1,"codeCount":3,"createdAt":0}]"""
+        val list = kotlinx.serialization.json.Json.decodeFromString<List<SavedRemote>>(json)
+        assertEquals(null, list.single().customName)
+    }
 }
 
 class IrDatabaseTest {

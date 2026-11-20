@@ -89,6 +89,9 @@ data class SavedRemote(
     val codeIndex: Int,
     val codeCount: Int,
     val createdAt: Long,
+    /** User-chosen name such as "TV Ruang Tamu"; null shows the default brand + category title. */
+    val customName: String? = null,
 ) {
-    val title: String get() = "$brand ${category.label}"
+    val defaultTitle: String get() = "$brand ${category.label}"
+    val title: String get() = customName?.takeIf { it.isNotBlank() } ?: defaultTitle
 }

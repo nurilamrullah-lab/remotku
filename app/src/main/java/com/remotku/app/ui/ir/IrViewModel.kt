@@ -90,6 +90,7 @@ sealed interface IrIntent {
     data object PairingRestart : IrIntent
     data class OpenRemote(val id: String) : IrIntent
     data class DeleteRemote(val id: String) : IrIntent
+    data class RenameRemote(val id: String, val name: String) : IrIntent
     data class Press(val key: IrKey) : IrIntent
     data object AcTogglePower : IrIntent
     data class AcSetMode(val mode: AcMode) : IrIntent
@@ -133,6 +134,11 @@ class IrViewModel(
                 _state.update { s -> s.copy(routes = s.routes.filterNot { it == Route.Remote(intent.id) }.ifEmpty { listOf(Route.Home) }) }
             }
             is IrIntent.Press -> press(intent.key)
+            is IrIntent.RenameRemote -> {
+                store.rename(intent.id, intent.name)
+                val renamed = store.remotes.value.firstOrNull { it.id == intent.id }
+                _state.update { s -> if (s.active?.remote?.id == intent.id && renamed != null) s.copy(active = s.active.copy(remote = renamed)) else s }
+            }
             IrIntent.AcTogglePower -> updateAc(AcChange.POWER) { it.copy(power = !it.power) }
             is IrIntent.AcSetMode -> updateAc(AcChange.MODE) { it.copy(mode = intent.mode, power = true) }
             is IrIntent.AcChangeTemp -> updateAc(AcChange.TEMPERATURE) { it.copy(temperature = it.temperature + intent.delta, power = true) }

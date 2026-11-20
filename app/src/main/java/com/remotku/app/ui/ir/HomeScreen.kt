@@ -26,6 +26,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.SettingsRemote
 import androidx.compose.material.icons.outlined.Wifi
@@ -68,6 +74,13 @@ fun HomeScreen(
     onIntent: (IrIntent) -> Unit,
 ) {
     var pendingDelete by remember { mutableStateOf<SavedRemote?>(null) }
+    var pendingRename by remember { mutableStateOf<SavedRemote?>(null) }
+    pendingRename?.let { remote ->
+        RenameRemoteDialog(remote, onDismiss = { pendingRename = null }) { name ->
+            onIntent(IrIntent.RenameRemote(remote.id, name))
+            pendingRename = null
+        }
+    }
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
             Modifier.fillMaxSize(),
@@ -112,7 +125,13 @@ fun HomeScreen(
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
                         Text(remote.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("IR · Kode ${remote.codeIndex} dari ${remote.codeCount}", style = MaterialTheme.typography.bodySmall, color = RemotkuColors.TextMuted)
+                        Text(
+                            (if (remote.customName != null) "${remote.defaultTitle} · " else "") + "IR · Kode ${remote.codeIndex} dari ${remote.codeCount}",
+                            style = MaterialTheme.typography.bodySmall, color = RemotkuColors.TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    IconButton(onClick = { pendingRename = remote }) {
+                        Icon(Icons.Outlined.Edit, contentDescription = "Ubah nama ${remote.title}", tint = RemotkuColors.TextMuted)
                     }
                     IconButton(onClick = { pendingDelete = remote }) {
                         Icon(Icons.Outlined.DeleteOutline, contentDescription = "Hapus ${remote.title}", tint = RemotkuColors.TextMuted)
@@ -143,6 +162,40 @@ fun HomeScreen(
         )
     }
 }
+
+@Composable
+fun RenameRemoteDialog(remote: SavedRemote, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    var name by remember(remote.id) { mutableStateOf(remote.customName.orEmpty()) }
+    val save = { onSave(name.trim()) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Ubah nama remote") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it.take(MAX_NAME_LENGTH) },
+                    placeholder = { Text(remote.defaultTitle) },
+                    label = { Text("Nama remote") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { save() }),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    "Contoh: TV Ruang Tamu, AC Ruang Kerja, Kipas Kamar Tidur. Kosongkan untuk memakai \"${remote.defaultTitle}\".",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = RemotkuColors.TextMuted,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = save) { Text("Simpan") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Batal") } },
+    )
+}
+
+private const val MAX_NAME_LENGTH = 40
 
 @Composable
 private fun EmptyRemotes(onAdd: () -> Unit) {

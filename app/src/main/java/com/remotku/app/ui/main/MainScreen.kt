@@ -16,6 +16,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.material.icons.outlined.SettingsRemote
 import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material3.AlertDialog
@@ -60,6 +66,7 @@ import com.remotku.app.ui.ir.IrRemoteScreen
 import com.remotku.app.ui.ir.IrUiState
 import com.remotku.app.ui.ir.IrViewModel
 import com.remotku.app.ui.ir.PairingScreen
+import com.remotku.app.ui.ir.RenameRemoteDialog
 import com.remotku.app.ui.ir.Route
 import com.remotku.app.ui.theme.RemotkuColors
 import com.remotku.app.ui.tv.TvIntent
@@ -104,6 +111,7 @@ fun RemotkuApp(
     val route = irState.route
     val haptics = LocalHaptics.current
     var confirmDelete by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf(false) }
     BackHandler(enabled = irState.routes.size > 1) { onIr(IrIntent.Back) }
 
     val (title, subtitle) = when (route) {
@@ -112,7 +120,8 @@ fun RemotkuApp(
         is Route.Brands -> "Pilih merek" to route.category.label
         is Route.Pairing -> "${route.brand} ${route.category.label}" to "Pencocokan kode"
         is Route.Remote -> (irState.active?.remote?.title ?: "Remote") to irState.active?.let { a ->
-            "Kode ${a.remote.codeIndex}/${a.remote.codeCount}" + (a.codeSet?.model?.let { " · $it" } ?: "")
+            (if (a.remote.customName != null) "${a.remote.defaultTitle} · " else "") +
+                "Kode ${a.remote.codeIndex}/${a.remote.codeCount}" + (a.codeSet?.model?.let { " · $it" } ?: "")
         }
     }
 
@@ -136,6 +145,7 @@ fun RemotkuApp(
                 },
                 actions = {
                     if (route is Route.Remote) {
+                        IconButton(onClick = { renaming = true }) { Icon(Icons.Outlined.Edit, contentDescription = "Ubah nama remote") }
                         IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Outlined.DeleteOutline, contentDescription = "Hapus remote") }
                     }
                 },
@@ -155,6 +165,12 @@ fun RemotkuApp(
     }
 
     val active = irState.active
+    if (renaming && active != null) {
+        RenameRemoteDialog(active.remote, onDismiss = { renaming = false }) { name ->
+            renaming = false
+            onIr(IrIntent.RenameRemote(active.remote.id, name))
+        }
+    }
     if (confirmDelete && active != null) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },

@@ -93,6 +93,10 @@ class SavedRemoteStore(context: Context) {
 
     fun remove(id: String) = update { list -> list.filterNot { it.id == id } }
 
+    fun rename(id: String, name: String?) = update { list ->
+        list.map { if (it.id == id) it.copy(customName = name?.trim()?.takeIf(String::isNotEmpty)) else it }
+    }
+
     private fun update(transform: (List<SavedRemote>) -> List<SavedRemote>) {
         _remotes.update(transform)
         prefs.edit().putString(KEY, json.encodeToString(serializer, _remotes.value)).apply()

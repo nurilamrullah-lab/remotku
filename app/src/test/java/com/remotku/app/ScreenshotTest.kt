@@ -30,6 +30,12 @@ import com.remotku.app.ui.ir.BrandListState
 import com.remotku.app.ui.ir.PairingState
 import com.remotku.app.ui.ir.Route
 import com.remotku.app.ui.main.RemotkuApp
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
 import com.remotku.app.ui.ir.IrUiState
 import com.remotku.app.ui.theme.RemotkuColors
 import com.remotku.app.ui.theme.RemotkuTheme
@@ -107,13 +113,23 @@ class ScreenshotTest {
         IrUiState(
             hasIrEmitter = true,
             saved = listOf(
-                saved(IrCategory.TV, "Samsung", "tv_1", 1, 24),
-                saved(IrCategory.AC, "Daikin", "@AC_DAIKIN", 1, 11),
+                saved(IrCategory.TV, "Samsung", "tv_1", 1, 24).copy(customName = "TV Ruang Tamu"),
+                saved(IrCategory.AC, "Daikin", "@AC_DAIKIN", 1, 11).copy(customName = "AC Ruang Kerja"),
                 saved(IrCategory.STB, "Matrix Apple", "stb_dvb_generic_a", 2, 10),
-                saved(IrCategory.FAN, "Miyako", "fan_1", 3, 8),
+                saved(IrCategory.FAN, "Miyako", "fan_1", 3, 8).copy(customName = "Kipas Kamar Tidur"),
             ),
         ),
     ))
+
+    @Test
+    fun launcherIcon() = shot("12_launcher_icon") {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(216.dp).clip(CircleShape)) {
+                Image(painterResource(R.drawable.ic_launcher_background), null, Modifier.fillMaxSize())
+                Image(painterResource(R.drawable.ic_launcher_foreground), null, Modifier.fillMaxSize())
+            }
+        }
+    }
 
     @Test
     fun addController() = shot("4_add_controller", app(IrUiState(hasIrEmitter = true, routes = listOf(Route.Home, Route.AddController))))
